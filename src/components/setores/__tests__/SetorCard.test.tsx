@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SetorCard } from '../SetorCard';
 import { type SetorData } from '@/services/setoresService';
 
@@ -26,7 +26,7 @@ describe('SetorCard', () => {
   });
 
   it('renders setor information correctly', () => {
-    render(
+    const { getByText } = render(
       <SetorCard 
         setor={mockSetor} 
         onEdit={mockOnEdit} 
@@ -34,16 +34,16 @@ describe('SetorCard', () => {
       />
     );
 
-    expect(screen.getByText('Vendas')).toBeInTheDocument();
-    expect(screen.getByText('Setor de vendas da empresa')).toBeInTheDocument();
-    expect(screen.getByText('5/10 agentes')).toBeInTheDocument();
-    expect(screen.getByText('Ativo')).toBeInTheDocument();
+    expect(getByText('Vendas')).toBeInTheDocument();
+    expect(getByText('Setor de vendas da empresa')).toBeInTheDocument();
+    expect(getByText('5/10 agentes')).toBeInTheDocument();
+    expect(getByText('Ativo')).toBeInTheDocument();
   });
 
   it('calls onEdit when edit button is clicked', async () => {
     const user = userEvent.setup();
     
-    render(
+    const { getByRole } = render(
       <SetorCard 
         setor={mockSetor} 
         onEdit={mockOnEdit} 
@@ -51,7 +51,7 @@ describe('SetorCard', () => {
       />
     );
 
-    const editButton = screen.getByRole('button', { name: /edit/i });
+    const editButton = getByRole('button', { name: /edit/i });
     await user.click(editButton);
 
     expect(mockOnEdit).toHaveBeenCalledWith(mockSetor);
@@ -60,7 +60,7 @@ describe('SetorCard', () => {
   it('calls onDelete when delete button is clicked', async () => {
     const user = userEvent.setup();
     
-    render(
+    const { getByRole } = render(
       <SetorCard 
         setor={mockSetor} 
         onEdit={mockOnEdit} 
@@ -68,7 +68,7 @@ describe('SetorCard', () => {
       />
     );
 
-    const deleteButton = screen.getByRole('button', { name: /trash/i });
+    const deleteButton = getByRole('button', { name: /trash/i });
     await user.click(deleteButton);
 
     expect(mockOnDelete).toHaveBeenCalledWith(mockSetor);
@@ -77,7 +77,7 @@ describe('SetorCard', () => {
   it('shows inactive badge for inactive setores', () => {
     const inactiveSetor = { ...mockSetor, ativo: false };
     
-    render(
+    const { getByText } = render(
       <SetorCard 
         setor={inactiveSetor} 
         onEdit={mockOnEdit} 
@@ -85,6 +85,6 @@ describe('SetorCard', () => {
       />
     );
 
-    expect(screen.getByText('Inativo')).toBeInTheDocument();
+    expect(getByText('Inativo')).toBeInTheDocument();
   });
 });

@@ -5,6 +5,18 @@ import { createLogger } from '../_shared/logger.ts'
 import { validateWebhookPayload, sanitizePhone } from '../_shared/validation.ts'
 import { MessageQueue } from '../_shared/queue.ts'
 
+// Function to verify webhook signature
+function verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
+  try {
+    // For Z-API or similar services, they typically use HMAC-SHA256
+    const expectedSignature = `sha256=${crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret + payload))}`;
+    return signature === expectedSignature;
+  } catch (error) {
+    console.error('Error verifying webhook signature:', error);
+    return false;
+  }
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -29,10 +41,33 @@ serve(async (req) => {
       headers: Object.fromEntries(req.headers.entries())
     });
 
+    // Get the raw body for signature verification
+    const rawBody = await req.text();
+    
+    // Verify webhook signature (enhanced security)
+    const webhookSecret = Deno.env.get('WEBHOOK_SECRET');
+    if (webhookSecret) {
+      const signature = req.headers.get('x-hub-signature-256') || req.headers.get('x-signature');
+      if (!signature || !verifyWebhookSignature(rawBody, signature, webhookSecret)) {
+        await logger.error('Invalid webhook signature', undefined, undefined, { 
+          hasSignature: !!signature,
+          hasSecret: !!webhookSecret
+        });
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: 'Invalid webhook signature',
+          correlationId 
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 401,
+        });
+      }
+    }
+
     // Parse and validate request body
     let payload;
     try {
-      payload = await req.json();
+      payload = JSON.parse(rawBody);
     } catch (error) {
       await logger.error('Invalid JSON payload', undefined, undefined, { error: error.message });
       return new Response(JSON.stringify({ 

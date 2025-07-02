@@ -4,6 +4,33 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { createLogger } from '../_shared/logger.ts'
 import { MessageQueue } from '../_shared/queue.ts'
 
+// Function to move failed messages to dead letter queue
+async function moveToDeadLetterQueue(supabase: any, queuedMessage: any, errorMessage: string, logger: any) {
+  try {
+    await supabase
+      .from('failed_messages')
+      .insert({
+        original_message_id: queuedMessage.id,
+        correlation_id: queuedMessage.correlation_id,
+        message_type: queuedMessage.message_type,
+        payload: queuedMessage.payload,
+        error_message: errorMessage,
+        failure_count: queuedMessage.retry_count + 1,
+        metadata: queuedMessage.metadata || {}
+      });
+    
+    await logger.info('Message moved to dead letter queue', undefined, undefined, {
+      messageId: queuedMessage.id,
+      errorMessage
+    });
+  } catch (dlqError) {
+    await logger.error('Failed to move message to dead letter queue', undefined, undefined, {
+      messageId: queuedMessage.id,
+      dlqError: dlqError.message
+    });
+  }
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -88,6 +115,11 @@ serve(async (req) => {
           
           await messageQueue.markFailed(queuedMessage.id, errorText, shouldRetry);
           
+          // If max retries exceeded, move to dead letter queue
+          if (!shouldRetry) {
+            await moveToDeadLetterQueue(supabase, queuedMessage, errorText, messageLogger);
+          }
+          
           await messageLogger.error('Message processing failed', undefined, undefined, {
             messageId: queuedMessage.id,
             error: errorText,
@@ -104,6 +136,11 @@ serve(async (req) => {
       } catch (error) {
         const shouldRetry = queuedMessage.retry_count < queuedMessage.max_retries;
         await messageQueue.markFailed(queuedMessage.id, error.message, shouldRetry);
+        
+        // If max retries exceeded, move to dead letter queue
+        if (!shouldRetry) {
+          await moveToDeadLetterQueue(supabase, queuedMessage, error.message, messageLogger);
+        }
         
         await messageLogger.error('Unexpected error processing message', undefined, undefined, {
           messageId: queuedMessage.id,

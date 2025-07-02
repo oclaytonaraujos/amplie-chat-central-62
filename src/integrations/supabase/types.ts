@@ -9,6 +9,45 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      audit_log: {
+        Row: {
+          action: string
+          id: string
+          ip_address: unknown | null
+          new_values: Json | null
+          old_values: Json | null
+          record_id: string
+          table_name: string
+          timestamp: string
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          id?: string
+          ip_address?: unknown | null
+          new_values?: Json | null
+          old_values?: Json | null
+          record_id: string
+          table_name: string
+          timestamp?: string
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          id?: string
+          ip_address?: unknown | null
+          new_values?: Json | null
+          old_values?: Json | null
+          record_id?: string
+          table_name?: string
+          timestamp?: string
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       chatbot_flows: {
         Row: {
           created_at: string | null
@@ -525,6 +564,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      failed_messages: {
+        Row: {
+          correlation_id: string
+          created_at: string
+          error_message: string
+          failure_count: number
+          first_failed_at: string
+          id: string
+          last_failed_at: string
+          message_type: string
+          metadata: Json | null
+          original_message_id: string
+          payload: Json
+        }
+        Insert: {
+          correlation_id: string
+          created_at?: string
+          error_message: string
+          failure_count?: number
+          first_failed_at?: string
+          id?: string
+          last_failed_at?: string
+          message_type: string
+          metadata?: Json | null
+          original_message_id: string
+          payload: Json
+        }
+        Update: {
+          correlation_id?: string
+          created_at?: string
+          error_message?: string
+          failure_count?: number
+          first_failed_at?: string
+          id?: string
+          last_failed_at?: string
+          message_type?: string
+          metadata?: Json | null
+          original_message_id?: string
+          payload?: Json
+        }
+        Relationships: []
       }
       mensagens: {
         Row: {

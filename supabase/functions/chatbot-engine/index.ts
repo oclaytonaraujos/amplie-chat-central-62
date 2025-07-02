@@ -5,6 +5,133 @@ import { createLogger } from '../_shared/logger.ts'
 import { NLPProcessor, NLPResult } from '../_shared/nlp.ts'
 import { sanitizePhone } from '../_shared/validation.ts'
 
+// Extracted stage handlers for better maintainability
+async function handleStageStart(nlpResult: NLPResult, userName: string, telefone: string, nextStage: string, responseMessages: any[]) {
+  if (nlpResult.intent === 'greeting') {
+    responseMessages.push({
+      type: 'text',
+      phone: telefone,
+      data: {
+        message: `Olá ${userName}! 👋 Que bom te ver por aqui!\n\nSou o assistente virtual e estou aqui para ajudá-lo. Como posso te ajudar hoje?\n\n1️⃣ Informações sobre produtos\n2️⃣ Suporte técnico\n3️⃣ Falar com atendente\n4️⃣ Horário de funcionamento\n\nDigite o número da opção desejada:`
+      }
+    });
+  } else if (nlpResult.intent === 'product_inquiry') {
+    responseMessages.push({
+      type: 'text',
+      phone: telefone,
+      data: {
+        message: `Olá ${userName}! 👋 Vejo que você tem interesse em nossos produtos!\n\nPara te ajudar melhor, qual é o seu nome completo?`
+      }
+    });
+    nextStage = 'collecting_name_products';
+  } else if (nlpResult.intent === 'support_request') {
+    responseMessages.push({
+      type: 'text',
+      phone: telefone,
+      data: {
+        message: `Olá ${userName}! 👋 Entendi que você precisa de suporte.\n\nPara melhor atendê-lo, qual é o seu nome completo?`
+      }
+    });
+    nextStage = 'collecting_name_support';
+  } else {
+    responseMessages.push({
+      type: 'text',
+      phone: telefone,
+      data: {
+        message: `Olá ${userName}! 👋\n\nSou o assistente virtual da nossa empresa. Como posso ajudá-lo hoje?\n\n1️⃣ Informações sobre produtos\n2️⃣ Suporte técnico\n3️⃣ Falar com atendente\n4️⃣ Horário de funcionamento\n\nDigite o número da opção desejada:`
+      }
+    });
+  }
+  nextStage = nextStage === 'start' ? 'awaiting_option' : nextStage;
+  return { nextStage, responseMessages };
+}
+
+async function handleAwaitingOption(userMessage: string, nlpResult: NLPResult, telefone: string, nextStage: string, responseMessages: any[], context: any) {
+  let shouldTransferToHuman = false;
+  
+  if (userMessage === '1' || nlpResult.intent === 'product_inquiry') {
+    responseMessages.push({
+      type: 'text',
+      phone: telefone,
+      data: {
+        message: '📋 Ótimo! Temos diversos produtos disponíveis.\n\nPoderia me informar seu nome completo para um atendimento mais personalizado?'
+      }
+    });
+    nextStage = 'collecting_name_products';
+  } else if (userMessage === '2' || nlpResult.intent === 'support_request') {
+    responseMessages.push({
+      type: 'text',
+      phone: telefone,
+      data: {
+        message: '🛠️ Entendi que você precisa de suporte técnico.\n\nPara melhor ajudá-lo, preciso de algumas informações. Qual é o seu nome completo?'
+      }
+    });
+    nextStage = 'collecting_name_support';
+  } else if (userMessage === '3') {
+    responseMessages.push({
+      type: 'text',
+      phone: telefone,
+      data: {
+        message: '👨‍💼 Perfeito! Vou conectá-lo com um de nossos atendentes.\n\nPor favor, aguarde um momento...'
+      }
+    });
+    shouldTransferToHuman = true;
+    context.transfer_reason = 'Solicitação direta do cliente';
+  } else if (userMessage === '4') {
+    responseMessages.push({
+      type: 'text',
+      phone: telefone,
+      data: {
+        message: '🕐 Nosso horário de funcionamento:\n\n📅 Segunda a Sexta: 8h às 18h\n📅 Sábado: 8h às 12h\n📅 Domingo: Fechado\n\nPosso ajudá-lo com mais alguma coisa?\n\n1️⃣ Voltar ao menu principal\n2️⃣ Falar com atendente'
+      }
+    });
+    nextStage = 'after_hours_info';
+  } else {
+    // Check if NLP can interpret the message
+    if (nlpResult.confidence > 0.5) {
+      if (nlpResult.intent === 'product_inquiry') {
+        nextStage = 'collecting_name_products';
+        responseMessages.push({
+          type: 'text',
+          phone: telefone,
+          data: {
+            message: '📋 Entendi que você tem interesse em nossos produtos! Qual é o seu nome completo?'
+          }
+        });
+      } else if (nlpResult.intent === 'support_request') {
+        nextStage = 'collecting_name_support';
+        responseMessages.push({
+          type: 'text',
+          phone: telefone,
+          data: {
+            message: '🛠️ Vou ajudá-lo com o suporte. Primeiro, qual é o seu nome completo?'
+          }
+        });
+      } else {
+        responseMessages.push({
+          type: 'text',
+          phone: telefone,
+          data: {
+            message: '🤔 Entendi. Vou conectá-lo com um atendente para melhor ajudá-lo.'
+          }
+        });
+        shouldTransferToHuman = true;
+        context.transfer_reason = 'NLP não conseguiu interpretar claramente a solicitação';
+      }
+    } else {
+      responseMessages.push({
+        type: 'text',
+        phone: telefone,
+        data: {
+          message: '❌ Opção inválida. Por favor, digite apenas o número da opção desejada:\n\n1️⃣ Informações sobre produtos\n2️⃣ Suporte técnico\n3️⃣ Falar com atendente\n4️⃣ Horário de funcionamento'
+        }
+      });
+    }
+  }
+  
+  return { nextStage, responseMessages, shouldTransferToHuman, context };
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -135,42 +262,7 @@ serve(async (req) => {
     // Main routing logic based on current_stage
     switch (nextStage) {
       case 'start':
-        if (nlpResult.intent === 'greeting') {
-          responseMessages.push({
-            type: 'text',
-            phone: telefone,
-            data: {
-              message: `Olá ${userName}! 👋 Que bom te ver por aqui!\n\nSou o assistente virtual e estou aqui para ajudá-lo. Como posso te ajudar hoje?\n\n1️⃣ Informações sobre produtos\n2️⃣ Suporte técnico\n3️⃣ Falar com atendente\n4️⃣ Horário de funcionamento\n\nDigite o número da opção desejada:`
-            }
-          });
-        } else if (nlpResult.intent === 'product_inquiry') {
-          responseMessages.push({
-            type: 'text',
-            phone: telefone,
-            data: {
-              message: `Olá ${userName}! 👋 Vejo que você tem interesse em nossos produtos!\n\nPara te ajudar melhor, qual é o seu nome completo?`
-            }
-          });
-          nextStage = 'collecting_name_products';
-        } else if (nlpResult.intent === 'support_request') {
-          responseMessages.push({
-            type: 'text',
-            phone: telefone,
-            data: {
-              message: `Olá ${userName}! 👋 Entendi que você precisa de suporte.\n\nPara melhor atendê-lo, qual é o seu nome completo?`
-            }
-          });
-          nextStage = 'collecting_name_support';
-        } else {
-          responseMessages.push({
-            type: 'text',
-            phone: telefone,
-            data: {
-              message: `Olá ${userName}! 👋\n\nSou o assistente virtual da nossa empresa. Como posso ajudá-lo hoje?\n\n1️⃣ Informações sobre produtos\n2️⃣ Suporte técnico\n3️⃣ Falar com atendente\n4️⃣ Horário de funcionamento\n\nDigite o número da opção desejada:`
-            }
-          });
-        }
-        nextStage = nextStage === 'start' ? 'awaiting_option' : nextStage;
+        ({ nextStage, responseMessages } = await handleStageStart(nlpResult, userName, telefone, nextStage, responseMessages));
         break;
 
       case 'awaiting_option':
